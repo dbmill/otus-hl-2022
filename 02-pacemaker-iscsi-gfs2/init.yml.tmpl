@@ -1,0 +1,203 @@
+---
+- hosts: all
+  remote_user: ${remote_user}
+  become: yes
+  tasks:
+  - name: Set timezone
+    timezone:
+      name: Europe/Moscow
+
+  - name: Install utilities
+    yum:
+      name: "{{ item }}"
+      state: latest
+    loop:
+    - mc
+    - vim-enhanced
+
+  - name: Fill hosts
+    copy:
+      dest: /etc/hosts
+      content: "#\n
+127.0.0.1	localhost\n
+%{ for node in nodes ~}
+${node.network_interface.0.ip_address}	${node.hostname}\n
+%{ endfor ~}
+${iscsi.network_interface.0.ip_address}	${iscsi.hostname}\n
+"
+  - name: Set PS1
+    copy:
+      src: ./prompt.sh
+      dest: /etc/profile.d/prompt.sh
+      mode: "0644"
+      owner: root
+      group: root
+
+- hosts: ${iscsi.hostname}
+  remote_user: ${remote_user}
+  become: yes
+  roles:
+  - { role: OndrejHome.targetcli }
+  vars:
+    iscsi_targets:
+    - wwn: ${iqn_base}:storage.target00
+      disks:
+      - path: /dev/vdb
+        name: disk01
+        type: block
+      initiators:
+%{ for node in nodes ~}
+      - ${iqn_base}:${node.hostname}
+%{ endfor ~}
+
+- hosts: cluster
+  remote_user: ${remote_user}
+  become: yes
+  vars:
+  - iqn_base: ${iqn_base}
+  tasks:
+  - name: Provision cluster packages
+    yum:
+      name: "{{ item }}"
+      state: latest
+    loop:
+    - pcs
+    - fence-agents-all
+    - iscsi-initiator-utils
+    - device-mapper-multipath
+    - lvm2-cluster
+    - gfs2-utils
+
+  - name: Set password for hacluster to '123'
+    user:
+      name: hacluster
+      password: $5$A55.Uz8o.y8MuGaf$w3axEzoOgSeGyJo3OE56a4Ki1ctGEWP1GMyU7tOVJu6
+
+  - name: Start cluster services
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    loop:
+    - pcsd
+
+- hosts: cluster
+  remote_user: ${remote_user}
+  become: yes
+  roles:
+  - { role: OndrejHome.iscsiadm, iscsi_target_ip: ${iscsi.network_interface.0.ip_address}, custom_iscsi_initiator_name: "${iqn_base}:{{ ansible_hostname }}" }
+  - { role: OndrejHome.iscsiadm, iscsi_target_ip: ${iscsi.network_interface.1.ip_address} }
+
+  tasks:
+  - name: Enable multipathing
+    command:
+      cmd: /sbin/mpathconf --enable
+      creates: /etc/multipath.conf
+
+  - name: Start multipathing & iscsi
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    loop:
+    - multipathd
+    - iscsi
+
+  - name: Create and deploy auth keys
+    run_once: true
+    command:
+      cmd: /sbin/pcs cluster auth %{for node in nodes}${node.hostname} %{endfor}-u hacluster -p 123
+      creates: /var/lib/pcsd/tokens
+
+  - name: Create cluster
+    run_once: true
+    command:
+      cmd: /sbin/pcs cluster setup --name ${cluster_name} --start --wait --enable%{for node in nodes} ${node.hostname},${node.network_interface.1.ip_address}%{endfor}
+      creates: /etc/corosync/corosync.conf
+
+  - name: Disable fencing
+    run_once: true
+    command: /sbin/pcs property set stonith-enabled=false
+
+  - name: Freeze a no-quorum policy
+    run_once: true
+    command: /sbin/pcs property set no-quorum-policy=freeze
+
+  - name: Create dlm
+    run_once: true
+    command: /sbin/pcs resource create dlm systemd:dlm op monitor interval=30s on-fail=ignore clone interleave=true ordered=true --wait
+    register: result
+    failed_when:
+    - result.rc != 0 and "already exists" not in result.stderr
+
+  - name: Create clvmd
+    run_once: true
+    command: /sbin/pcs resource create clvmd ocf:heartbeat:clvm op monitor interval=30s on-fail=ignore clone interleave=true ordered=true --wait
+    register: result
+    failed_when:
+    - result.rc != 0 and "already exists" not in result.stderr
+
+  - name: Set order constraint
+    run_once: true
+    command: pcs constraint order start dlm-clone then clvmd-clone
+    register: result
+    failed_when:
+    - result.rc != 0 and "already exists" not in result.stderr
+
+  - name: Set colocation constraint
+    run_once: true
+    command: pcs constraint colocation add clvmd-clone with dlm-clone
+    register: result
+    failed_when:
+    - result.rc != 0 and "already exists" not in result.stderr
+
+  - name: Create a PV and VG
+    run_once: true
+    community.general.lvg:
+      pvs: /dev/mapper/mpatha
+      vg: ${vg_name}
+      vg_options: --clustered=y --autobackup=y
+
+  - name: Create a LV
+    run_once: true
+    community.general.lvol:
+      vg: ${vg_name}
+      lv: ${lv_name}
+      size: 100%VG
+
+  - name: Create a FS
+    run_once: true
+    command: mkfs.gfs2 -j ${cluster_size} -p lock_dlm -t ${cluster_name}:${fs_name} -O /dev/${vg_name}/${lv_name}
+    register: result
+    failed_when:
+    - result.rc != 0
+    - '"Device or resource busy" not in result.stderr'
+
+  - name: Create a clusterfs resource
+    run_once: true
+    command: /sbin/pcs resource create clusterfs ocf:heartbeat:Filesystem device=/dev/${vg_name}/${lv_name} directory=/mnt/gfs2 fstype=gfs2 options=noatime op monitor interval=10s on-fail=ignore clone interleave=true --wait
+    register: result
+    failed_when:
+    - result.rc != 0
+    - '"already exists" not in result.stderr'
+
+  - name: Set order constraint
+    run_once: true
+    command: pcs constraint order start clvmd-clone then clusterfs-clone
+    register: result
+    failed_when:
+    - result.rc != 0
+    - '"already exists" not in result.stderr'
+
+  - name: Set colocation constraint
+    run_once: true
+    command: pcs constraint colocation add clusterfs-clone with clvmd-clone
+    register: result
+    failed_when:
+    - result.rc != 0
+    - '"already exists" not in result.stderr'
+
+  - name: Put a test file
+    shell:
+      cmd: hostname >> hostnames
+      chdir: /mnt/gfs2
