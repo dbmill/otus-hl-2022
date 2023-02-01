@@ -1,0 +1,142 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+  - name: 10. Set timezone
+    timezone:
+      name: Europe/Moscow
+
+  - name: 20. Install utilities
+    yum:
+      name:
+      - mc
+      - mlocate
+      - vim-enhanced
+      - tcpdump
+      - telnet
+      - traceroute
+      - epel-release
+      state: present
+
+  - name: 30. Set PS1
+    copy:
+      src: ../prompt.sh
+      dest: /etc/profile.d/prompt.sh
+      mode: "0644"
+      owner: root
+      group: root
+
+  - name: 40. Disable firewall
+    service:
+      name: firewalld
+      state: stopped
+      enabled: false
+
+  - name: 50. Disable SELinux
+    lineinfile:
+      path: /etc/sysconfig/selinux
+      line: SELINUX=disabled
+      regexp: '^SELINUX='
+    register: selinux
+
+  - name: 51. Reboot
+    ansible.builtin.reboot:
+    when: selinux.changed
+
+  - name: Configure a frontend
+    block:
+    - name: 200. Install keepalived nginx
+      yum:
+        name:
+        - keepalived
+        - nginx
+        state: present
+
+    - name: 210. Copy keepalived.conf
+      template:
+        src: ./keepalived.conf.j2
+        dest: /etc/keepalived/keepalived.conf
+        mode: "0644"
+        owner: root
+        group: root
+      notify: Restart keepalived
+
+    - name: 220. Copy nginx.conf
+      copy:
+        src: ./nginx.conf
+        dest: /etc/nginx/
+      notify: Restart nginx
+    when: '"frontend" in group_names'
+
+  - name: Configure a backend
+    block:
+    - name: 300. Install app packages
+      yum:
+        name:
+        - mysql
+        - php
+        - php-mysqlnd
+        - php-fpm
+        state: present
+
+    - name: 310. Configure php-fpm
+      community.general.ini_file:
+        path: /etc/php-fpm.d/www.conf
+        section: www
+        option: listen
+        value: 11211
+
+    - name: 311. Configure php-fpm
+      community.general.ini_file:
+        path: /etc/php-fpm.d/www.conf
+        section: www
+        option: listen.allowed_clients
+        state: absent
+
+    - name: 320. Start php-fpm
+      service:
+        name: php-fpm
+        state: started
+        enabled: true
+
+    - name: 330. Copy index.php
+      copy:
+        src: ./index.php
+        dest: /usr/share/nginx/html/
+    when: '"backend" in group_names'
+
+  - name: Configure a DB
+    block:
+    - name: 400. Install packages
+      yum:
+        name:
+        - mysql-server
+        - python3-mysqlclient
+        state: present
+
+    - name: 410. Start MySQL
+      service:
+        name: mysqld
+        state: started
+        enabled: true
+
+    - name: 420. Create dbuser
+      community.mysql.mysql_user:
+        name: dbuser
+        host: '%'
+        password: pass123
+        plugin: mysql_native_password
+    when: inventory_hostname == "db"
+
+  handlers:
+  - name: Restart keepalived
+    service:
+      name: keepalived
+      state: restarted
+      enabled: true
+
+  - name: Restart nginx
+    service:
+      name: nginx
+      state: restarted
+      enabled: true

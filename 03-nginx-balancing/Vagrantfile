@@ -1,0 +1,78 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "echo Hello $(hostname)"
+
+  config.vm.define "fe1" do |node|
+    node.vm.box = "~/generic-centos8-virtual-4.2.6.box"
+    node.vm.box_check_update = false
+    node.vm.hostname = "fe1"
+    node.vm.network "private_network", ip: "192.168.56.2", hostname: true
+    node.vm.provider "virtualbox" do |vb|
+      vb.name = "fe1"
+      vb.cpus = 1
+      vb.memory = "1024"
+    end
+  end
+
+  config.vm.define "fe2" do |node|
+    node.vm.box = "~/generic-centos8-virtual-4.2.6.box"
+    node.vm.box_check_update = false
+    node.vm.hostname = "fe2"
+    node.vm.network "private_network", ip: "192.168.56.3", hostname: true
+    node.vm.provider "virtualbox" do |vb|
+      vb.name = "fe2"
+      vb.cpus = 1
+      vb.memory = "1024"
+    end
+  end
+
+  config.vm.define "be1" do |node|
+    node.vm.box = "~/generic-centos8-virtual-4.2.6.box"
+    node.vm.box_check_update = false
+    node.vm.hostname = "be1"
+    node.vm.network "private_network", ip: "192.168.56.11", hostname: true
+    node.vm.provider "virtualbox" do |vb|
+      vb.name = "be1"
+      vb.cpus = 1
+      vb.memory = "1024"
+    end
+  end
+
+  config.vm.define "be2" do |node|
+    node.vm.box = "~/generic-centos8-virtual-4.2.6.box"
+    node.vm.box_check_update = false
+    node.vm.hostname = "be2"
+    node.vm.network "private_network", ip: "192.168.56.12", hostname: true
+    node.vm.provider "virtualbox" do |vb|
+      vb.name = "be2"
+      vb.cpus = 1
+      vb.memory = "1024"
+    end
+  end
+
+  config.vm.define "db" do |node|
+    node.vm.box = "~/generic-centos8-virtual-4.2.6.box"
+    node.vm.box_check_update = false
+    node.vm.hostname = "db"
+    node.vm.network "private_network", ip: "192.168.56.20", hostname: true
+    node.vm.provider "virtualbox" do |vb|
+      vb.name = "db"
+      vb.cpus = 1
+      vb.memory = "1024"
+    end
+  end
+
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "playbook.yml"
+    ansible.groups = {
+	    "frontend" => ["fe1", "fe2"],
+	    "backend" => ["be1", "be2"]
+    }
+    ansible.host_vars = {
+	    "fe1" => { "vrrp_state" => "MASTER", "vrrp_priority" => 101},
+	    "fe2" => { "vrrp_state" => "BACKUP", "vrrp_priority" => 100}
+    }
+  end
+end
