@@ -6,7 +6,7 @@ Terraform и Ansible роль для развёртывания серверов
 * keepalived,
 * nginx,
 * uwsgi/unicorn/php-fpm
-* некластеризованная бд mysql/mongodb/postgres/redis
+* некластеризованная БД MySQL/MongoDB/Postgres/Redis
 
 #### Для сдачи:
 * terraform манифесты
@@ -15,18 +15,22 @@ Terraform и Ansible роль для развёртывания серверов
 
 ### Архитектура решения
 * 2 front-end сервера (nginx) с VIP на keepalived;
-* 2 back-end сервера (nginx + php-fpm)
+* 2 back-end сервера (php-fpm)
 * 1 сервер СУБД MySQL
 
-#### Pre-requisites
-В ~/.ssh/ должен быть ключ, тип не имеет значения.
 #### Проверка
 `curl http://192.168.56.4`
+```
+Front-end: fe1
+Back-end: be1
+MySQL version: 8.0.26
+Connection id: 15
+```
 
 При повторных вызовах чередуется Back-end, при переключении VIP меняется Front-end.
 
 #### Проблемы и их решение, в порядке возникновения
-1. Vagrant вместо Terraform.
+1. Vagrant вместо Terraform, т.к. Yandex Cloud не поддерживает VRRP.
 2. Нужно предварительно скачать в $HOME образ generic-centos8-virtual-4.2.6.box.
 3. Работе VRRP мешает firewall, поэтому его отключаем. Иначе оба keepalived переходят в режим MASTER.
 4. SELinux препятствует запуску php-fpm на порту 11211, поэтому отключён.
