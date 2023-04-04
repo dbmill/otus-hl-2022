@@ -382,6 +382,10 @@
       state: started
       enabled: true
 
+  - name: 710a. Wait for ProxySQL to become operational
+    ansible.builtin.wait_for:
+      port: 6032
+
   - name: 720. Add backend servers
     community.mysql.mysql_query:
       login_host: 127.0.0.1
