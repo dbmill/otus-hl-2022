@@ -1,0 +1,411 @@
+---
+- hosts: dbcluster dbproxy
+  become: yes
+#  vars:
+#    pxc_repo_file: ${pxc_repo_file}
+#    pxc_repo_name: ${pxc_repo_name}
+  tasks:
+  - name: 100. Install Percona repo
+    yum:
+      pkg: https://repo.percona.com/yum/percona-release-latest.noarch.rpm
+      state: present
+      disable_gpg_check: true
+
+  - name: 101. Enable pxc-80 repo
+    command:
+      cmd: /bin/percona-release enable-only pxc-80 release
+      creates: /etc/yum.repos.d/${pxc_repo_file}
+# Percona-Server-server-57-5.7.34
+
+  - name: 102. Enable Percona Tools repo
+    command:
+      cmd: /bin/percona-release enable tools release
+      creates: /etc/yum.repos.d/percona-tools-release.repo
+
+  - name: 105. Disable module filtering
+    ini_file:
+      path: /etc/yum.repos.d/${pxc_repo_file}
+      section: ${pxc_repo_name}
+      option: module_hotfixes
+      value: true
+
+- hosts: dbcluster
+  become: yes
+  vars:
+    mysql_user:  ${mysql_user}
+    mysql_passwd:  ${mysql_passwd}
+    mysql_datadir: /var/lib/mysql
+    mysql_cert_dir: /etc/mysql/certs
+  tasks:
+  - name: 110. Install Percona XtraDB Cluster
+    yum:
+      pkg: percona-xtradb-cluster
+      state: present
+
+  - name: 120. Config timezone for logging
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: log_timestamps
+      value: SYSTEM
+
+  - name: 130. Config MySQL node addresses
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: wsrep_cluster_address
+      value: gcomm://${join(",", dbcluster[*].network_interface.0.ip_address)}
+
+  - name: 140. Config cluster node name
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: wsrep_node_name
+      value: "{{ ansible_hostname }}"
+
+  - name: 150. Config cluster node address
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: wsrep_node_address
+      value: "{{ ansible_default_ipv4.address }}"
+
+  - name: 160. Set ssl-key to default location
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      option: ssl-key
+      state: absent
+
+  - name: 161. Set ssl-cert to default location
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      option: ssl-cert
+      state: absent
+
+  - name: 162. Set ssl-ca to default location
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      option: ssl-ca
+      state: absent
+
+  - name: 200. Locate a MySQL log
+    run_once: true
+    command: /bin/awk -F= '$1=="log-error" {print $2}' /etc/my.cnf
+    register: mysql_log
+
+  - name: 280. Make sure MySQL bootstrap is stopped
+    run_once: true
+    service:
+      name: mysql@bootstrap
+      state: stopped
+
+  - name: 290. Make sure MySQL is stopped
+    service:
+      name: mysql
+      state: stopped
+
+  - name: 291. Make sure the log is empty
+    file:
+      path: "{{ mysql_log.stdout }}"
+      state: absent
+
+  - name: 295. Stat a MySQL datadir
+    run_once: true
+    stat:
+      path: "{{ mysql_datadir }}"
+    register: datadir
+
+  - name: 298. Make sure MySQL datadir is empty
+    file:
+      path: "{{ mysql_datadir }}"
+      state: absent
+
+  - name: 299. Touch the MySQL datadir
+    file:
+      path: "{{ mysql_datadir }}"
+      state: directory
+      owner: "{{ datadir.stat.pw_name }}"
+      group: "{{ datadir.stat.gr_name }}"
+      mode: "{{ datadir.stat.mode }}"
+    
+  - name: 300. Bootstrap the 1st node
+    run_once: true
+    service:
+      name: mysql@bootstrap
+      state: started
+
+  - name: 302. Config ssl-key location
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: ssl-key
+      value: "{{ mysql_cert_dir }}/server-key.pem"
+
+  - name: 303. Config ssl-cert location
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: ssl-cert
+      value: "{{ mysql_cert_dir }}/server-cert.pem"
+
+  - name: 304. Config ssl-ca location
+    ini_file:
+      path: /etc/my.cnf
+      section: mysqld
+      no_extra_spaces: true
+      option: ssl-ca
+      value: "{{ mysql_cert_dir }}/ca.pem"
+
+  - name: 310. Fetch SSL certs
+    run_once: true
+    fetch:
+      src: "{{ mysql_datadir }}/{{ item }}"
+      dest: .
+    loop:
+    - ca.pem
+    - server-cert.pem
+    - server-key.pem
+
+  - name: 320. Deploy SSL certs
+    copy:
+      src: ./${dbcluster[0].hostname}{{ mysql_datadir }}/{{ item }}
+      dest: "{{ mysql_cert_dir }}/"
+      owner: mysql
+      group: mysql
+      mode: "0644"
+    loop:
+    - ca.pem
+    - server-cert.pem
+
+  - name: 330. Deploy SSL key
+    copy:
+      src: ./${dbcluster[0].hostname}{{ mysql_datadir }}/{{ item }}
+      dest: "{{ mysql_cert_dir }}/"
+      owner: mysql
+      group: mysql
+      mode: "0600"
+    loop:
+    - server-key.pem
+
+  - name: 350. Find a temporary password
+    run_once: true
+    command: /bin/awk '/A temporary password is generated/ {print $NF}' {{ mysql_log.stdout }}
+    register: mysql_tmp_passwd
+
+  - name: 360. Set passwordless login
+    ini_file:
+      path: ~/.my.cnf
+      section: client
+      option: password
+      value: "{{ mysql_passwd }}"
+
+  - name: 370. Set a permanent password
+    run_once: true
+    command: /bin/mysql --connect-expired-password -p'{{ mysql_tmp_passwd.stdout }}' -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mysql_passwd }}'"
+    register: result
+    changed_when: result.rc == 0
+    failed_when:
+    - result.rc != 0
+    - '"ERROR 1045 " not in result.stderr'
+
+  - name: 380. Check cluster status
+    run_once: true
+    community.mysql.mysql_query:
+      query:
+      - SHOW STATUS LIKE 'wsrep_local_state_comment'
+      - SHOW STATUS LIKE 'wsrep_cluster_status'
+      - SHOW STATUS LIKE 'wsrep_connected'
+      - SHOW STATUS LIKE 'wsrep_ready'
+    register: result
+    failed_when: >
+      result.failed or
+      result.query_result[0][0].Value != "Synced" or
+      result.query_result[1][0].Value != "Primary" or
+      result.query_result[2][0].Value != "ON" or
+      result.query_result[3][0].Value != "ON"
+%{for node in dbcluster}
+  %{if node.hostname != dbcluster[0].hostname}
+  - name: 400. Add secondary nodes
+    block:
+    - name: 410. Start MySQL at ${node.hostname}
+      service:
+        name: mysql
+        state: started
+
+    - name: 420. Check ${node.hostname}'s status
+      community.mysql.mysql_query:
+        query:
+        - SHOW STATUS LIKE 'wsrep_local_state_comment'
+        - SHOW STATUS LIKE 'wsrep_cluster_status'
+        - SHOW STATUS LIKE 'wsrep_connected'
+        - SHOW STATUS LIKE 'wsrep_ready'
+      register: result
+      failed_when: >
+        result.failed or
+        result.query_result[0][0].Value != "Synced" or
+        result.query_result[1][0].Value != "Primary" or
+        result.query_result[2][0].Value != "ON" or
+        result.query_result[3][0].Value != "ON"
+    when: inventory_hostname == "${node.hostname}"
+  %{endif}
+%{endfor}
+  - name: 500. Stop the bootstrapped node
+    run_once: true
+    service:
+      name: mysql@bootstrap
+      state: stopped
+
+  - name: 510. Start ${dbcluster[0].hostname} in regular mode
+    run_once: true
+    service:
+      name: mysql
+      state: started
+
+  - name: 520. Check final cluster status
+    run_once: true
+    community.mysql.mysql_query:
+      query:
+      - SHOW STATUS LIKE 'wsrep_local_state_comment'
+      - SHOW STATUS LIKE 'wsrep_cluster_status'
+      - SHOW STATUS LIKE 'wsrep_connected'
+      - SHOW STATUS LIKE 'wsrep_ready'
+    register: result
+    failed_when: >
+      result.failed or
+      result.query_result[0][0].Value != "Synced" or
+      result.query_result[1][0].Value != "Primary" or
+      result.query_result[2][0].Value != "ON" or
+      result.query_result[3][0].Value != "ON"
+
+  - name: 550. Create a ProxySQL monitoring user
+    run_once: true
+    community.mysql.mysql_user:
+      name: proxysql
+      host: '%'
+      password: "{{ mysql_passwd }}"
+      plugin: mysql_native_password
+      priv: '*.*:USAGE'
+
+%{for h in dbproxy}
+  - name: 551. Create a ProxySQL client user for ${h.hostname}
+    run_once: true
+    community.mysql.mysql_user:
+      name: '{{ mysql_user }}'
+      host: '${h.network_interface.0.ip_address}'
+      password: "{{ mysql_passwd }}"
+      plugin: mysql_native_password
+      priv: '*.*:ALL'
+ %{endfor}
+
+- hosts: dbproxy
+  become: yes
+  vars:
+    mysql_user:  ${mysql_user}
+    mysql_passwd:  ${mysql_passwd}
+    proxysql_datadir: /var/lib/proxysql
+  tasks:
+  - name: 700. Install ProxySQL
+    yum:
+      name:
+      - percona-xtradb-cluster-client
+      - proxysql2
+      state: present
+
+  - name: 702. Make sure ProxySQL is stopped
+    service:
+      name: proxysql
+      state: stopped
+
+  - name: 703. Stat a ProxySQL datadir
+    run_once: true
+    stat:
+      path: "{{ proxysql_datadir }}"
+    register: datadir
+
+  - name: 704. Make sure ProxySQL datadir is empty
+    file:
+      path: "{{ proxysql_datadir }}"
+      state: absent
+
+  - name: 705. Touch the ProxySQL datadir
+    file:
+      path: "{{ proxysql_datadir }}"
+      state: directory
+      owner: "{{ datadir.stat.pw_name }}"
+      group: "{{ datadir.stat.gr_name }}"
+      mode: "{{ datadir.stat.mode }}"
+
+  - name: 710. Start and enable ProxySQL
+    service:
+      name: proxysql
+      state: started
+      enabled: true
+
+  - name: 710a. Wait for ProxySQL to become operational
+    ansible.builtin.wait_for:
+      port: 6032
+
+  - name: 720. Add backend servers
+    community.mysql.mysql_query:
+      login_host: 127.0.0.1
+      login_port: 6032
+      login_user: admin
+      login_password: admin
+      query:
+%{for node in dbcluster ~}
+      - INSERT INTO mysql_servers(hostgroup_id, hostname) VALUES (0,'${node.network_interface.0.ip_address}')
+%{endfor ~}
+      - LOAD MYSQL SERVERS TO RUNTIME
+      - SAVE MYSQL SERVERS TO DISK
+      - UPDATE global_variables SET variable_value='proxysql' WHERE variable_name='mysql-monitor_username'
+      - UPDATE global_variables SET variable_value='{{ mysql_passwd }}' WHERE variable_name='mysql-monitor_password'
+      - LOAD MYSQL VARIABLES TO RUNTIME
+      - SAVE MYSQL VARIABLES TO DISK
+      - INSERT INTO mysql_users (username,password) VALUES ('{{ mysql_user }}','{{ mysql_passwd }}')
+      - LOAD MYSQL USERS TO RUNTIME
+      - SAVE MYSQL USERS TO DISK
+
+  - name: 800. Create a database
+    run_once: true
+    community.mysql.mysql_db:
+      login_host: 127.0.0.1
+      login_port: 6033
+      login_user: '{{ mysql_user }}'
+      login_password: '{{ mysql_passwd }}'
+      name: otus
+
+  - name: 810. Create a table and a record
+    run_once: true
+    community.mysql.mysql_query:
+      login_host: 127.0.0.1
+      login_port: 6033
+      login_user: '{{ mysql_user }}'
+      login_password: '{{ mysql_passwd }}'
+      login_db: otus
+      query:
+      - CREATE TABLE IF NOT EXISTS cust (id SERIAL PRIMARY KEY, name VARCHAR(100))
+      - INSERT INTO cust (name) VALUES ("Otus")
+
+- hosts: nginx
+  tasks:
+  - name: 900. Set passwordless login
+    ini_file:
+      path: ~/.my.cnf
+      section: client
+      option: user
+      value: "${mysql_user}"
+  - name: 901. Set passwordless login
+    ini_file:
+      path: ~/.my.cnf
+      section: client
+      option: password
+      value: "${mysql_passwd}"

@@ -1,0 +1,283 @@
+---
+- hosts: localhost
+  become: yes
+  tasks:
+  - name: a) Add bastion to /etc/hosts
+    lineinfile:
+      dest: /etc/hosts
+      regexp: '\s${bastion.hostname}$'
+      line: "${bastion.network_interface.0.nat_ip_address} ${bastion.hostname}"
+      
+  - name: b) Add haproxylb to /etc/hosts
+    lineinfile:
+      dest: /etc/hosts
+      regexp: '\shaproxylb$'
+      line: "${haproxylb} haproxylb"
+      
+- hosts: all:!bastions
+  become: yes
+  tasks:
+  - name: 10. Set timezone
+    timezone:
+      name: Europe/Moscow
+
+  - name: 20. Install utilities
+    package:
+      name: "{{ item }}"
+      state: present
+    loop:
+    - mlocate
+    - vim-enhanced
+    - telnet
+    - tcpdump
+    - epel-release
+    - python3-mysqlclient
+    - mc
+    ignore_errors: yes
+
+  - name: 30. Set PS1
+    copy:
+      src: ../prompt.sh
+      dest: /etc/profile.d/prompt.sh
+      mode: "0644"
+      owner: root
+      group: root
+
+  - name: 40. Fill hosts
+    copy:
+      dest: /etc/hosts
+      content: |
+        #
+        127.0.0.1	localhost
+        ${dbproxylb}  dbproxy
+
+  - name: 50. Disable SELinux
+    ansible.posix.selinux:
+      state: disabled
+    notify: Reboot
+
+  handlers:
+  - name: Reboot
+    reboot:
+  
+- hosts: bastions
+  become: yes
+  tasks:
+  - name: 100. Install nginx
+    package:
+      name: nginx
+      state: present
+
+  - name: 110. Run nginx
+    service:
+      name: nginx
+      state: started
+      enabled: yes
+
+- hosts: haproxy
+  become: yes
+  tasks:
+  - name: 200. Install haproxy
+    package:
+      name: haproxy
+      state: present
+
+  - name: 210. Configure haproxy
+    copy:
+      dest: /etc/haproxy/
+      src: ./haproxy.cfg
+      owner: root
+      group: root
+      mode: 0644
+    notify: Restart haproxy
+
+  - name: 220. Configure rsyslog
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: module(load="imudp")
+      search_string: '#module(load="imudp")'
+    notify: Restart rsyslog
+
+  - name: 221. Configure rsyslog
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: input(type="imudp" port="514")
+      search_string: '#input(type="imudp" port="514")'
+    notify: Restart rsyslog
+
+  - name: 222. Configure rsyslog
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: module(load="imtcp")
+      search_string: '#module(load="imtcp")'
+    notify: Restart rsyslog
+
+  - name: 223. Configure rsyslog
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: input(type="imtcp" port="514")
+      search_string: '#input(type="imtcp" port="514")'
+    notify: Restart rsyslog
+
+  - name: 230. Deliver haproxy.conf
+    copy:
+      dest: /etc/rsyslog.d/haproxy.conf
+      content: "local2.*		/var/log/haproxy.log"
+      owner: root
+      group: root
+      mode: 0644
+    notify: Restart rsyslog
+
+  handlers:
+  - name: Restart haproxy
+    service:
+      name: haproxy
+      state: restarted
+      enabled: yes
+  - name: Restart rsyslog
+    service:
+      name: rsyslog
+      state: restarted
+
+- hosts: nginx
+  become: yes
+  tasks:
+  - name: 300. Add nginx repo
+    ansible.builtin.yum_repository:
+      name: nginx-stable
+      file: nginx
+      description: "nginx stable repo"
+      baseurl: "http://nginx.org/packages/centos/$releasever/$basearch/"
+      gpgcheck: true
+      enabled: true
+      gpgkey: "https://nginx.org/keys/nginx_signing.key"
+      module_hotfixes: true
+
+  - name: 305. Install packages
+    package:
+      name: "{{ item }}"
+      state: present
+    loop:
+    - nginx
+    - mysql
+
+  - name: 310. Replace index.html
+    copy:
+      dest: /usr/share/nginx/html/index.html
+      content: "{{ ansible_hostname }}"
+      owner: root
+      group: root
+      mode: 0644
+
+  - name: 320. Run nginx
+    service:
+      name: nginx
+      state: started
+      enabled: yes
+
+  - name: 330. Copy PHP
+    copy:
+      src: ./PHP
+      dest: .
+
+  - name: 340. Install PHP
+    package:
+      name: "{{ item }}"
+      state: present
+    loop:
+    - ./PHP/php-common-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-cli-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-fpm-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-gd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-intl-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-json-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-mbstring-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-pdo-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-mysqlnd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - ./PHP/php-pecl-apcu-5.1.17-1.module_el8.2.0+314+53b99e08.x86_64.rpm
+    - ./PHP/php-xml-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+
+  - name: 350. Create group wiki
+    group:
+      name: wiki
+      gid: 80
+  - name: 351. Create user wiki
+    user:
+      name: wiki
+      uid: 80
+      group: wiki
+      comment: Wiki
+      home: /srv/www
+      create_home: false
+      shell: /sbin/nologin
+
+  - name: 360. Configure PHP-FPM
+    copy:
+      src: ./www.conf
+      dest: /etc/php-fpm.d/
+      owner: root
+      group: root
+      mode: 0644
+    notify: Restart PHP-FPM
+
+  - name: 370. Configure nginx
+    copy:
+      src: ./nginx.conf
+      dest: /etc/nginx/
+    notify: Restart nginx
+
+  - name: 380. Copy mediawiki
+    copy:
+      src: ./WIKI
+      dest: .
+
+  - name: 381. Make /srv/www
+    file:
+      path: /srv/www
+      state: directory
+
+  - name: 382. Untar mediawiki into /srv/www
+    command:
+      cmd: /bin/tar xzf /home/cloud-user/WIKI/mediawiki-1.35.2.tar.gz
+      chdir: /srv/www
+
+  - name: 383. Make a symlink mediawiki
+    file:
+      path: /srv/www/mediawiki
+      src:  /srv/www/mediawiki-1.35.2
+      state: link
+
+  - name: 384. Change owner for mediawiki
+    file:
+      path: /srv/www/mediawiki-1.35.2
+      owner: wiki
+      group: wiki
+      state: directory
+      recurse: true
+
+  - name: 385. Make a session cache
+    file:
+      path: /srv/www/cache/session
+      state: directory
+
+  - name: 386. Assign owner and rights
+    file:
+      path: /srv/www/cache
+      state: directory
+      owner: wiki
+      group: wiki
+      mode: 0750
+      recurse: true
+
+  handlers:
+  - name: Restart PHP-FPM
+    service:
+      name: php-fpm
+      state: restarted
+      enabled: yes
+  - name: Restart nginx
+    service:
+      name: nginx
+      state: restarted
+      enabled: yes

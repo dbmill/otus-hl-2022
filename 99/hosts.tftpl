@@ -1,0 +1,35 @@
+[bastions]
+${bastion.name} ansible_host=${bastion.network_interface.0.nat_ip_address}
+
+[haproxy]
+%{ for h in haproxy ~}
+${h.name}
+%{ endfor ~}
+
+[nginx]
+%{ for h in nginx ~}
+${h.name}
+%{ endfor ~}
+
+[dbcluster]
+%{ for h in dbcluster ~}
+${h.name}
+%{ endfor ~}
+
+[dbproxy]
+%{ for h in dbproxy ~}
+${h.name}
+%{ endfor ~}
+
+[gluster]
+%{ for h in gluster ~}
+${h.name}
+%{ endfor ~}
+
+[all:vars]
+ansible_user=${cloud_user}
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=${bastion_user}@${bastion.network_interface.0.nat_ip_address}'
+
+[bastions:vars]
+ansible_user=${bastion_user}
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
