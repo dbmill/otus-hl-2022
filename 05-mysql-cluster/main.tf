@@ -84,6 +84,42 @@ resource "yandex_compute_instance" "dbproxy" {
   }
 }
 
+resource "yandex_compute_instance" "client" {
+  name     = "client"
+  hostname = "client"
+
+  resources {
+    cores  = 2
+    memory = 2
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.myimage.id
+    }
+  }
+
+  network_interface {
+    subnet_id = data.yandex_vpc_subnet.default.id
+    nat       = true
+  }
+
+  metadata = {
+    ssh-keys = "${var.cloud_user}:${data.local_file.public_key.content}"
+  }
+
+# A hack to give sshd time to start
+  connection {
+    type = "ssh"
+    host = self.network_interface.0.nat_ip_address
+    user = var.cloud_user
+    private_key = data.local_sensitive_file.private_key.content
+  }
+  provisioner "remote-exec" {
+    inline = ["date"]
+  }
+}
+
 resource "local_file" "inventory" {
   filename = "./hosts"
   content  = <<-EOF
@@ -93,6 +129,9 @@ resource "local_file" "inventory" {
 
   [dbproxies]
   %{for vm in yandex_compute_instance.dbproxy.* ~}${vm.hostname} ansible_host=${vm.network_interface.0.nat_ip_address} ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+  %{endfor ~}
+  [clients]
+  %{for vm in yandex_compute_instance.client.* ~}${vm.hostname} ansible_host=${vm.network_interface.0.nat_ip_address} ansible_ssh_common_args='-o StrictHostKeyChecking=no'
   %{endfor ~}
   EOF
   file_permission = "0644"
@@ -108,6 +147,7 @@ resource "local_file" "init_yml" {
     pxc_repo_name  = var.pxc_repo_name,
     mysql_passwd   = var.mysql_passwd,
     dbproxy        = yandex_compute_instance.dbproxy
+	client         = yandex_compute_instance.client
   })
   file_permission = "0644"
 }
@@ -130,4 +170,7 @@ output "dbcluster_public_ip" {
 }
 output "dbproxy_public_ip" {
   value = yandex_compute_instance.dbproxy.network_interface.0.nat_ip_address
+}
+output "ClientIP" {
+  value = yandex_compute_instance.client.network_interface.0.nat_ip_address
 }
