@@ -60,15 +60,29 @@ resource "yandex_compute_instance" "bastion" {
     ssh-keys = "${var.bastion_user}:${data.local_file.public_key.content}"
   }
 
-# A hack to give sshd time to start
-  connection {
-    type = "ssh"
-    host = self.network_interface.0.nat_ip_address
-    user = var.bastion_user
-    private_key = data.local_sensitive_file.private_key.content
-  } 
+  # A hack to give sshd time to start
   provisioner "remote-exec" {
+    connection {
+      type = "ssh"
+      host = self.network_interface.0.nat_ip_address
+      user = var.bastion_user
+      private_key = data.local_sensitive_file.private_key.content
+    } 
     inline = ["date"]
+  }
+  # add self to /etc/hosts
+  provisioner "local-exec" {
+    command = "sudo sed -i 'a${self.network_interface.0.nat_ip_address} ${self.hostname}' /etc/hosts"
+  }
+  # remove self from /etc/hosts
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sudo sed -i '/^${self.network_interface.0.nat_ip_address} ${self.hostname}$/d' /etc/hosts"
+  }
+  # remove self from known_hosts
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sed -i '/^${self.hostname}\\W/d' ~/.ssh/known_hosts"
   }
 }
 

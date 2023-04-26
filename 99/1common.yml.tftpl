@@ -1,0 +1,53 @@
+---
+# A bastion goes first to put its key into known_hosts file
+- hosts: bastions
+  become: yes
+  tasks:
+  - name: 10. Set timezone
+    timezone:
+      name: Europe/Moscow
+
+- hosts: all:!bastions
+  become: yes
+  tasks:
+  - name: 11. Set timezone
+    timezone:
+      name: Europe/Moscow
+
+  - name: 20. Install utilities
+    package:
+      name: "{{ item }}"
+      state: present
+    loop:
+    - mlocate
+    - vim-enhanced
+    - telnet
+    - tcpdump
+    - epel-release
+    - mc
+    ignore_errors: yes
+
+  - name: 30. Set PS1
+    copy:
+      src: ../prompt.sh
+      dest: /etc/profile.d/prompt.sh
+      mode: "0644"
+      owner: root
+      group: root
+
+  - name: 40. Fill hosts
+    copy:
+      dest: /etc/hosts
+      content: |
+        #
+        127.0.0.1	localhost
+        ${dbproxylb}  dbproxy
+
+  - name: 50. Disable SELinux
+    ansible.posix.selinux:
+      state: disabled
+    notify: Reboot
+
+  handlers:
+  - name: Reboot
+    reboot:

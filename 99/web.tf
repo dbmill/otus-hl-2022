@@ -19,24 +19,29 @@ resource "yandex_compute_instance" "haproxy" {
   }
   network_interface {
     subnet_id = yandex_vpc_subnet.default.id
-    ip_address = cidrhost(yandex_vpc_subnet.default.v4_cidr_blocks[0], var.ipHaproxy+count.index)
+#    ip_address = cidrhost(yandex_vpc_subnet.default.v4_cidr_blocks[0], var.ipHaproxy+count.index)
   }
 
   metadata = {
     ssh-keys = "${var.cloud_user}:${data.local_file.public_key.content}"
   }
 
-# A hack to give sshd time to start
-  connection {
-    type = "ssh"
-    host = self.network_interface.0.ip_address
-    user = var.cloud_user
-    private_key = data.local_sensitive_file.private_key.content
-	bastion_host = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
-	bastion_user = var.bastion_user
-  } 
+  # A hack to give sshd time to start
   provisioner "remote-exec" {
+    connection {
+      type = "ssh"
+      host = self.network_interface.0.ip_address
+      user = var.cloud_user
+      private_key = data.local_sensitive_file.private_key.content
+	  bastion_host = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
+      bastion_user = var.bastion_user
+    } 
     inline = ["date"]
+  }
+  # remove self from known_hosts
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sed -i '/^${self.hostname}\\W/d' ~/.ssh/known_hosts"
   }
 }
 
@@ -57,24 +62,29 @@ resource "yandex_compute_instance" "nginx" {
   }
   network_interface {
     subnet_id = yandex_vpc_subnet.default.id
-    ip_address = cidrhost(yandex_vpc_subnet.default.v4_cidr_blocks[0], var.ipNginx+count.index)
+#    ip_address = cidrhost(yandex_vpc_subnet.default.v4_cidr_blocks[0], var.ipNginx+count.index)
   }
 
   metadata = {
     ssh-keys = "${var.cloud_user}:${data.local_file.public_key.content}"
   }
 
-# A hack to give sshd time to start
-  connection {
-    type = "ssh"
-    host = self.network_interface.0.ip_address
-    user = var.cloud_user
-    private_key = data.local_sensitive_file.private_key.content
-	bastion_host = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
-	bastion_user = var.bastion_user
-  } 
+  # A hack to give sshd time to start
   provisioner "remote-exec" {
+    connection {
+      type = "ssh"
+      host = self.network_interface.0.ip_address
+      user = var.cloud_user
+      private_key = data.local_sensitive_file.private_key.content
+      bastion_host = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
+      bastion_user = var.bastion_user
+    } 
     inline = ["date"]
+  }
+  # remove self from known_hosts
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sed -i '/^${self.hostname}\\W/d' ~/.ssh/known_hosts"
   }
 }
 

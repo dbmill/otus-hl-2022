@@ -29,6 +29,13 @@
       option: module_hotfixes
       value: true
 
+  - name: 106. Install utilities
+    package:
+      name: "{{ item }}"
+      state: present
+    loop:
+    - python3-mysqlclient
+
 - hosts: dbcluster
   become: yes
   vars:
@@ -373,27 +380,6 @@
       - INSERT INTO mysql_users (username,password) VALUES ('{{ mysql_user }}','{{ mysql_passwd }}')
       - LOAD MYSQL USERS TO RUNTIME
       - SAVE MYSQL USERS TO DISK
-
-  - name: 800. Create a database
-    run_once: true
-    community.mysql.mysql_db:
-      login_host: 127.0.0.1
-      login_port: 6033
-      login_user: '{{ mysql_user }}'
-      login_password: '{{ mysql_passwd }}'
-      name: otus
-
-  - name: 810. Create a table and a record
-    run_once: true
-    community.mysql.mysql_query:
-      login_host: 127.0.0.1
-      login_port: 6033
-      login_user: '{{ mysql_user }}'
-      login_password: '{{ mysql_passwd }}'
-      login_db: otus
-      query:
-      - CREATE TABLE IF NOT EXISTS cust (id SERIAL PRIMARY KEY, name VARCHAR(100))
-      - INSERT INTO cust (name) VALUES ("Otus")
 
 - hosts: nginx
   tasks:

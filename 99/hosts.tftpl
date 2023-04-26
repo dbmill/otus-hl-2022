@@ -1,5 +1,5 @@
 [bastions]
-${bastion.name} ansible_host=${bastion.network_interface.0.nat_ip_address}
+${bastion.name}
 
 [haproxy]
 %{ for h in haproxy ~}
@@ -28,8 +28,11 @@ ${h.name}
 
 [all:vars]
 ansible_user=${cloud_user}
-ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=${bastion_user}@${bastion.network_interface.0.nat_ip_address}'
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=${bastion_user}@${bastion.name}'
 
 [bastions:vars]
 ansible_user=${bastion_user}
 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[nginx:vars]
+bakdir=${bakdir}

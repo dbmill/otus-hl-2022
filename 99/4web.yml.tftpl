@@ -1,79 +1,4 @@
 ---
-- hosts: localhost
-  become: yes
-  tasks:
-  - name: a) Add bastion to /etc/hosts
-    lineinfile:
-      dest: /etc/hosts
-      regexp: '\s${bastion.hostname}$'
-      line: "${bastion.network_interface.0.nat_ip_address} ${bastion.hostname}"
-      
-  - name: b) Add haproxylb to /etc/hosts
-    lineinfile:
-      dest: /etc/hosts
-      regexp: '\shaproxylb$'
-      line: "${haproxylb} haproxylb"
-      
-- hosts: all:!bastions
-  become: yes
-  tasks:
-  - name: 10. Set timezone
-    timezone:
-      name: Europe/Moscow
-
-  - name: 20. Install utilities
-    package:
-      name: "{{ item }}"
-      state: present
-    loop:
-    - mlocate
-    - vim-enhanced
-    - telnet
-    - tcpdump
-    - epel-release
-    - python3-mysqlclient
-    - mc
-    ignore_errors: yes
-
-  - name: 30. Set PS1
-    copy:
-      src: ../prompt.sh
-      dest: /etc/profile.d/prompt.sh
-      mode: "0644"
-      owner: root
-      group: root
-
-  - name: 40. Fill hosts
-    copy:
-      dest: /etc/hosts
-      content: |
-        #
-        127.0.0.1	localhost
-        ${dbproxylb}  dbproxy
-
-  - name: 50. Disable SELinux
-    ansible.posix.selinux:
-      state: disabled
-    notify: Reboot
-
-  handlers:
-  - name: Reboot
-    reboot:
-  
-- hosts: bastions
-  become: yes
-  tasks:
-  - name: 100. Install nginx
-    package:
-      name: nginx
-      state: present
-
-  - name: 110. Run nginx
-    service:
-      name: nginx
-      state: started
-      enabled: yes
-
 - hosts: haproxy
   become: yes
   tasks:
@@ -228,6 +153,7 @@
     notify: Restart nginx
 
   - name: 380. Copy mediawiki
+    run_once: true
     copy:
       src: ./WIKI
       dest: .
@@ -238,17 +164,20 @@
       state: directory
 
   - name: 382. Untar mediawiki into /srv/www
+    run_once: true
     command:
       cmd: /bin/tar xzf /home/cloud-user/WIKI/mediawiki-1.35.2.tar.gz
       chdir: /srv/www
 
   - name: 383. Make a symlink mediawiki
+    run_once: true
     file:
       path: /srv/www/mediawiki
       src:  /srv/www/mediawiki-1.35.2
       state: link
 
   - name: 384. Change owner for mediawiki
+    run_once: true
     file:
       path: /srv/www/mediawiki-1.35.2
       owner: wiki
@@ -257,11 +186,13 @@
       recurse: true
 
   - name: 385. Make a session cache
+    run_once: true
     file:
       path: /srv/www/cache/session
       state: directory
 
   - name: 386. Assign owner and rights
+    run_once: true
     file:
       path: /srv/www/cache
       state: directory

@@ -5,6 +5,11 @@ data "local_sensitive_file" "private_key" {
   filename = trimsuffix(data.local_file.public_key.filename, ".pub")
 }
 
+variable "bakdir" {
+  type = string
+  description = "Where a Wiki backup resides"
+  default = "WIKI-BAK"
+}
 variable "provider_zone" {
   type = string
   default = "ru-central1-a"
@@ -16,26 +21,6 @@ variable "subNet" {
 variable "ipBastion" {
   type = number
   default = 254
-}
-variable "ipHaproxy" {
-  type = number
-  default = 11
-}
-variable "ipNginx" {
-  type = number
-  default = 21
-}
-variable "ipProxySQL" {
-  type = number
-  default = 31
-}
-variable "ipDbcluster" {
-  type = number
-  default = 41
-}
-variable "ipGluster" {
-  type = number
-  default = 51
 }
 variable "bastion_user" {
   type = string
@@ -73,7 +58,6 @@ variable "mysql_user" {
 }
 variable "mysql_passwd" {
   type = string
-#  default = "Otus321$"
   default = "123"
 }
 

@@ -1,0 +1,95 @@
+---
+- hosts: gluster
+  become: yes
+  tasks:
+  - name: 100. Create a partition for XFS filesystem
+    community.general.parted:
+      device:    /dev/vdb
+      part_type: primary
+      number:    1
+      fs_type:   xfs
+      state:     present
+
+  - name: 105. Create a XFS filesystem
+    community.general.filesystem:
+      dev: /dev/vdb1
+      fstype: xfs
+
+  - name: 110. Mount the FS
+    ansible.posix.mount:
+      src:    /dev/vdb1
+      path:   /data/brick1
+      fstype: xfs
+      opts:   defaults
+      dump:   1
+      passno: 2
+      state:  mounted
+
+  - name: 120. Install GlusterFS repo
+    dnf:
+      name: centos-release-gluster11
+      state: present
+
+  - name: 130. Install glusterfs-server
+    dnf:
+      name: glusterfs-server
+      state: present
+      enablerepo: powertools
+
+  - name: 140. Start a glusterd service
+    service:
+      name: glusterd
+      state: started
+      enabled: true
+
+  - name: 150. Create a new cluster
+    run_once: true
+    gluster.gluster.gluster_peer:
+      state: present
+      nodes:
+%{ for h in gluster ~}
+      - ${h.network_interface.0.ip_address}
+%{ endfor ~}
+
+  - name: 160. Create a directory for a Gluster volume
+    file:
+      path: /data/brick1/gv0
+      state: directory
+
+  - name: 170. Create the Gluster volume
+    run_once: true
+    gluster.gluster.gluster_volume:
+      name: gv0
+      replicas: 3
+      bricks: /data/brick1/gv0
+      cluster:
+%{ for h in gluster ~}
+      - ${h.network_interface.0.ip_address}
+%{ endfor ~}
+      state: present
+
+  - name: 171. Make sure the volume started
+    gluster.gluster.gluster_volume:
+      name: gv0
+      state: started
+
+- hosts: nginx
+  become: true
+  tasks:
+  - name: 200. Install GlusterFS client
+    dnf:
+      name: '{{ item }}'
+      state: present
+    loop:
+    - centos-release-gluster11
+    - glusterfs-fuse
+
+  - name: 210. Mount GlusterFS
+    ansible.posix.mount:
+      src:    ${gluster[0].name}:/gv0
+      path:   /srv/www
+      fstype: glusterfs
+      opts:   defaults
+      dump:   1
+      passno: 2
+      state:  mounted
