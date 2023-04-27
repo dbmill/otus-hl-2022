@@ -40,6 +40,11 @@ resource "yandex_compute_instance" "dbcluster" {
     when    = destroy
     command = "sed -i '/^${self.hostname}\\W/d' ~/.ssh/known_hosts"
   }
+  # remove PXC cert
+  provisioner "local-exec" {
+    when    = destroy
+    command = "rm -rf ${self.hostname}"
+  }
 }
 
 resource "yandex_compute_instance" "dbproxy" {
