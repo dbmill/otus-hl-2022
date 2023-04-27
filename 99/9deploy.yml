@@ -1,0 +1,70 @@
+---
+- hosts: dbcluster
+  become: yes
+  tasks:
+  - name: 3.000 Set pxc_strict_mode to PERMISSIVE
+    community.mysql.mysql_variables:
+      variable: pxc_strict_mode
+      value: PERMISSIVE
+
+- hosts: nginx1
+  become: yes
+  tasks:
+  - name: 3.100 Copy DB dump
+    copy:
+      src: '{{ bakdir }}/memo_wiki.sql.gz'
+      dest: .
+
+  - name: 3.110 Restore DB dump
+    become: no
+    shell: /usr/bin/zcat memo_wiki.sql.gz | /usr/bin/mysql -h dbproxy
+    
+  - name: 3.120 Copy mods
+    copy:
+      src: '{{ bakdir }}/extensions/'
+      dest: /srv/www/mediawiki/extensions/
+      owner: wiki
+      group: wiki
+      mode: 0644
+      directory_mode: 0755
+
+  - name: 3.121 Copy logo
+    copy:
+      src: '{{ bakdir }}/Carnation_logo.png'
+      dest: /srv/www/mediawiki/
+      owner: wiki
+      group: wiki
+      mode: 0644
+
+  - name: 3.122 Copy favicon
+    copy:
+      src: '{{ bakdir }}/favicon.ico'
+      dest: /srv/www/mediawiki/
+      owner: wiki
+      group: wiki
+      mode: 0644
+
+  - name: 3.130 Copy images
+    copy:
+      src: '{{ bakdir }}/images/'
+      dest: /srv/www/mediawiki/images/
+      owner: wiki
+      group: wiki
+      mode: 0644
+      directory_mode: 0755
+
+  - name: 3.140 Copy LocalSettings
+    copy:
+      src: '{{ bakdir }}/LocalSettings.php'
+      dest: /srv/www/mediawiki/
+      owner: root
+      group: root
+      mode: 0644
+
+- hosts: dbcluster
+  become: yes
+  tasks:
+  - name: 3.200 Set pxc_strict_mode to ENFORCING
+    community.mysql.mysql_variables:
+      variable: pxc_strict_mode
+      value: ENFORCING
