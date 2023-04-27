@@ -23,3 +23,4 @@
 2. Чтобы обойти ошибку "bash: No such file or directory" от 'ssh -o ProxyJump=...' из-под screen, прописать "shell /bin/bash" в ~/.screenrc (вместо "shell -bash"). (https://stackoverflow.com/questions/64893355/the-hard-way-to-debug-the-mysterious-gitsshproxy-failure-bash-no-such-file-o)
 3. Inventory полагается на DNS в Yandex Cloud (x.y.z.2).
 3. Не следует создавать здесь папки mysqlX, т.к. они будут удалены вместе с соответствующей нодой.
+4. Инстанции при удалении удаляют также свои ключи из known_hosts, а bastion, кроме того, добавляет/удаляет себя из /etc/hosts.
