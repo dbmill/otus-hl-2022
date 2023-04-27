@@ -86,7 +86,7 @@ resource "null_resource" "ansible_4" {
 
   provisioner "local-exec" {
     command = "ansible-playbook -i ${local_file.inventory.filename} ${local_file.web_yml.filename}"
-#    command = "echo ansible 1"
+#    command = "echo ansible 4"
   }
 }
 
@@ -99,7 +99,7 @@ resource "local_file" "local_settings" {
   })
   file_permission = "0644"
 }
-/*
+
 resource "null_resource" "ansible_9" {
   depends_on = [null_resource.ansible_4, local_file.local_settings]
 
@@ -108,4 +108,3 @@ resource "null_resource" "ansible_9" {
 #    command = "echo ansible 9"
   }
 }
-*/
