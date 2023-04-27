@@ -33,7 +33,7 @@ resource "yandex_compute_instance" "haproxy" {
       host = self.network_interface.0.ip_address
       user = var.cloud_user
       private_key = data.local_sensitive_file.private_key.content
-	  bastion_host = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
+      bastion_host = yandex_compute_instance.bastion.network_interface.0.nat_ip_address
       bastion_user = var.bastion_user
     } 
     inline = ["date"]
@@ -62,7 +62,6 @@ resource "yandex_compute_instance" "nginx" {
   }
   network_interface {
     subnet_id = yandex_vpc_subnet.default.id
-#    ip_address = cidrhost(yandex_vpc_subnet.default.v4_cidr_blocks[0], var.ipNginx+count.index)
   }
 
   metadata = {
@@ -93,11 +92,10 @@ resource "yandex_lb_target_group" "haproxy" {
 
   dynamic "target" {
     for_each = yandex_compute_instance.haproxy
-#    for_each = yandex_compute_instance.nginx
-	content {
+    content {
       subnet_id = yandex_vpc_subnet.default.id
       address   = target.value.network_interface.0.ip_address
-	}
+    }
   }
 }
 
@@ -114,14 +112,14 @@ resource "yandex_lb_network_load_balancer" "web" {
     target_group_id = yandex_lb_target_group.haproxy.id
     healthcheck {
       name = "http"
-        http_options {
-          port = 80
-          path = "/fpm-ping"
-        }
+      http_options {
+        port = 80
+        path = "/fpm-ping"
+      }
     }
   }
 }
 
-output "WebLB_IP" {
-  value = tolist(tolist(yandex_lb_network_load_balancer.web.listener)[0].external_address_spec)[0].address
+output "Project_URL" {
+  value = "http://${tolist(tolist(yandex_lb_network_load_balancer.web.listener)[0].external_address_spec)[0].address}"
 }
