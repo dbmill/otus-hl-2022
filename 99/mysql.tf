@@ -96,10 +96,10 @@ resource "yandex_lb_target_group" "dbproxy" {
 
   dynamic "target" {
     for_each = yandex_compute_instance.dbproxy
-	content {
+    content {
       subnet_id = yandex_vpc_subnet.default.id
       address   = target.value.network_interface.0.ip_address
-	}
+	  }
   }
 }
 
@@ -109,7 +109,7 @@ resource "yandex_lb_network_load_balancer" "sql" {
   listener {
     name = "proxysql"
     port = 3306
-	target_port = 6033
+	  target_port = 6033
     internal_address_spec {
       subnet_id = yandex_vpc_subnet.default.id
     }
@@ -118,9 +118,9 @@ resource "yandex_lb_network_load_balancer" "sql" {
     target_group_id = yandex_lb_target_group.dbproxy.id
     healthcheck {
       name = "proxysql"
-        tcp_options {
-          port = 6033
-        }
+      tcp_options {
+        port = 6033
+      }
     }
   }
 }
