@@ -107,21 +107,21 @@
 
   - name: 340. Install PHP
     package:
-      name: "{{ item }}"
+      name: ./PHP/{{ item }}
       state: present
     loop:
-    - ./PHP/php-common-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-cli-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-fpm-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-gd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-intl-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-json-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-mbstring-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-pdo-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-mysqlnd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
-    - ./PHP/php-pecl-apcu-5.1.17-1.module_el8.2.0+314+53b99e08.x86_64.rpm
-    - ./PHP/php-xml-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-common-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-cli-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-fpm-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-gd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-intl-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-json-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-mbstring-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-pdo-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-mysqlnd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-pecl-apcu-5.1.17-1.module_el8.2.0+314+53b99e08.x86_64.rpm
+    - php-xml-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
 
   - name: 350. Create group wiki
     group:
@@ -157,11 +157,6 @@
     copy:
       src: ./WIKI
       dest: .
-
-  - name: 381. Make /srv/www
-    file:
-      path: /srv/www
-      state: directory
 
   - name: 382. Untar mediawiki into /srv/www
     run_once: true

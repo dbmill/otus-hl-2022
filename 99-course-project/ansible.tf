@@ -14,6 +14,12 @@ resource "local_file" "inventory" {
   file_permission = "0644"
 }
 
+resource "null_resource" "ansible_0" {
+  provisioner "local-exec" {
+    command = "ansible-playbook ./0download.yml"
+  }
+}
+
 resource "local_file" "common_yml" {
   filename = "./1common.yml"
   content = templatefile("1common.yml.tftpl", {
@@ -82,7 +88,11 @@ resource "local_file" "web_yml" {
 }
 
 resource "null_resource" "ansible_4" {
-  depends_on = [null_resource.ansible_3, local_file.haproxy_cfg]
+  depends_on = [
+    null_resource.ansible_0,
+    null_resource.ansible_3,
+    local_file.haproxy_cfg
+  ]
 
   provisioner "local-exec" {
     command = "ansible-playbook -i ${local_file.inventory.filename} ${local_file.web_yml.filename}"

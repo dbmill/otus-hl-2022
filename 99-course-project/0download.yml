@@ -1,0 +1,34 @@
+---
+- hosts: localhost
+  tasks:
+  - name: 10. Create destinations
+    file:
+      path: "{{ item }}"
+      state: directory
+    loop:
+    - PHP
+    - WIKI
+
+  - name: 20. Download PHP-7.3.20
+    get_url:
+      url: https://vault.centos.org/centos/8/AppStream/x86_64/os/Packages/{{ item }}
+      dest: PHP/
+    loop:
+    - php-common-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-cli-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-fpm-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-gd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-intl-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-json-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-mbstring-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-pdo-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-mysqlnd-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+    - php-pecl-apcu-5.1.17-1.module_el8.2.0+314+53b99e08.x86_64.rpm
+    - php-xml-7.3.20-1.module_el8.2.0+498+4deef2f1.x86_64.rpm
+
+  - name: 30. Download Mediawiki-1.35.2
+    get_url:
+      url: https://releases.wikimedia.org/mediawiki/1.35/mediawiki-1.35.2.tar.gz
+      dest: WIKI/
+    
